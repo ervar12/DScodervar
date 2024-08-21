@@ -1,0 +1,468 @@
+---
+title: "Análisis con Lenguaje R de datos del Fútbol Argentino, Primera Etapa"
+author: "Ervar Luis M⚽lina"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    toc: true
+  html_document:
+    toc: true
+    theme: lumen
+    css: estilos.css
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(purrr)
+library(forcats)
+library(readr)
+library(ggrepel)
+library(factoextra)
+library(tidyverse)
+library(tibble)
+library(knitr)
+
+```
+
+
+
+
+# Introducción
+
+
+Las apuestas digitales en el ámbito del fútbol argentino han experimentado un crecimiento exponencial en los últimos años, ofreciendo a los simpatizantes y a curiosos, una nueva dimensión de emoción y participación en este evento deportivo. Dicho fenómeno ha llevado a muchos entusiastas a explorar estrategias para mejorar sus posibilidades de éxito en las apuestas, y una de las aproximaciones más intrigantes que se proponen en este proyecto.
+
+El primer objetivo de esta propuesta se centra en acondicionar el data set y establer una exploración de datos primaria para descubir métricas que en un proyecto futuro, puedan fomentar la posibilidad de estudiar con mas profundidad la relación entre las variables y el resultado de los partido. En una segunda etapa se crearía un modelo de machine learning que ayude a predecir resultados con una precisión estadísticamente considerable y así considerar si su rendimiento logra cierta efectividad científica para utilizarlo.
+
+En este trabajo el proceso de desarrollo del análisis esta integrado por datos históricos de partidos de fútbol argentino, que en este caso se utilizara una muestra con el data set utilizado entre los años 2017 y 2022. Mediante el acondicionamiento de los datos y la generación de mítricas se observará las variables de estudio, como el rendimiento histórico de los equipos locales, estadísticas de goles a favor y en contra, tarjetas rojas, porcentaje final de posesión de la pelota, así como factores externos como proporción de jugadores con mayor habilidad en pierna izquierda, su altura y edad para establecer criterios de correlación apropiados.
+
+
+
+
+## Vista variables data set y sus tipos
+
+
+
+```{r, echo=FALSE}
+# Cargar el dataset
+datos <- read_csv("afa_2015_2022_spa.csv",show_col_types = FALSE)
+
+# Mostrar las primeras filas y los tipos de datos
+head(datos)
+str(datos)
+```
+
+
+
+# Resumen de los datos
+
+
+
+```{r, echo=FALSE}
+summary(datos)
+
+```
+
+
+```{r, echo=FALSE}
+
+# Contar el número total de valores NA
+total_na <- sum(is.na(datos))
+cat("Total de valores NA:", total_na, "\n")
+
+
+```
+
+
+
+# Transformación y acondicionamiento de dataset
+
+
+
+```{r, echo=FALSE}
+
+# Contar valores NA por cada columna
+na_por_columna <- datos %>%
+  summarise(across(everything(), ~ sum(is.na(.))))
+
+# Lista de variables que tienen NA y queremos reemplazar por el promedio
+colum_na <- names(na_por_columna)[unlist(na_por_columna) > 0]
+
+# Función para reemplazar NA por el promedio de la columna
+rempl_prom <- function(data, columns) {
+  data %>%
+    mutate(across(all_of(columns), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))
+}
+
+# Aplicar la función al dataframe
+datos1 <- rempl_prom(datos, colum_na)
+
+# Imprimir los datos limpios
+print(datos1)
+
+
+# Contar el número total de valores NA
+total_na2 <- sum(is.na(datos1))
+cat("Total de valores NA luego de depuración:", total_na2, "\n")
+
+```
+
+
+Transformar columnas de caracteres a factores
+```{r,echo=FALSE}
+
+datos1 <- mutate(datos1, across(.cols= c(torneo, equipo_local, equipo_visitante, resultado), .fns= factor))
+str(datos1)
+```
+
+
+
+
+
+
+# Análisis Exploratorio de Datos
+
+
+
+
+
+```{r resumen-alt_cm, echo=FALSE}
+#  promedio de posesion_visitante agrupado por resultado
+loc_posVis <- datos %>%
+  group_by(resultado) %>%
+  summarise(posesionVisitante = mean(posesion_visitante, na.rm = TRUE)) %>%
+  mutate(resultado = fct_reorder(resultado, posesionVisitante))
+
+# Imprimir la tabla 
+kable(loc_posVis, caption = "Promedio de posesión del visitante agrupado por resultado")
+
+```
+
+
+
+
+## Métricas simples
+
+
+
+```{r, echo=FALSE}
+
+
+
+
+# Crear el dataframe tibble
+df <- tibble(datos1)
+
+# Definir lista de funciones
+funciones <- list(
+  Promedio = mean,
+  Mediana = median,
+  Desvio_Estandar = sd
+)
+
+# Aplicar funciones a columnas numéricas y almacenar los resultados en un dataframe
+columnas_numericas <- select_if(df, is.numeric)
+resultados <- tibble(Campo = character())
+
+for (col in colnames(columnas_numericas)) {
+  medidas <- map_dfr(funciones, exec, columnas_numericas[[col]], na.rm = TRUE)
+  medidas <- medidas %>%
+    mutate(Campo = col) %>%
+    select(Campo, everything())
+  resultados <- bind_rows(resultados, medidas)
+}
+
+# Imprimir los resultados como una tabla
+kable(resultados, caption = "Medidas Estadísticas por Campo")
+
+
+
+
+```
+
+
+## Conceptos derivados de los análisis anteriores
+
+
+
+
+Con la visualización a través de los gráficos se logró una primera aproximación para ver que variables tienen comportamientos positivos o negativos entre si, lo que establecería pendientes distintas de cero que las posicionarían como variables listas para realizarle en el futuro el test de r2.
+
+
+
+
+# Visualización de Datos
+
+
+
+## Bivariado: goles_local y rojas_local
+
+
+```{r, echo=FALSE}
+# Bivariado: goles_local y rojas_local
+ggplot(data = datos1) + 
+  geom_point(mapping = aes(x = goles_local, y = rojas_local, color = resultado))
+
+```
+
+
+
+## Scatter plot: apuesta_local y posesion_local
+
+
+
+```{r, echo=FALSE}
+# Scatter plot: apuesta_local y posesion_local
+ggplot(data = datos1) +
+  geom_point(aes(x = apuesta_local, y = posesion_local, color = resultado)) 
+
+```
+
+
+
+## Line plot: altura_media_local y posesion_local
+
+
+
+```{r, echo=FALSE}
+
+# Line plot: altura_media_local y posesion_local
+ggplot(data = datos1) +
+  geom_line(aes(x = altura_media_local, y = posesion_local))
+```
+
+
+
+## Smooth plot: posesion_local y tiros_arco_local
+
+
+
+```{r, echo=FALSE}
+
+# Crear el gráfico sin capturar la salida
+ggplot(data = datos1) +
+  geom_smooth(aes(x = posesion_local, y = tiros_arco_local), 
+              method = "gam", 
+              formula = y ~ s(x, bs = "cs"), 
+              se = FALSE) +
+  labs(
+       x = "Posesión Local", 
+       y = "Tiros al Arco Local")
+
+
+
+```
+
+
+
+## Consideraciones
+
+
+
+En este informe se manifiesta el trabajo efectuado para la sanitización y acondicionamiento del dataset de AFA 2015-2022, reemplazando valores faltantes con promedios, y hemos generado resúmenes y visualizaciones que ofrecen una visión general de los datos. Las técnicas empleadas pueden adaptarse y ampliarse para realizar análisis más detallados según sea necesario.
+
+
+
+# Análisis PCA 
+
+
+
+Para interpretar los componentes principales (PC) con mayor impacto en el dataset utilizado, se deben observar los resultados del PCA, en particular, la varianza  y las cargas (loadings) de cada PC. De estos, los que explican una mayor proporción de la varianza total del dataset, reflejan un mayor impacto. Además, las variables con mayores cargas absolutas en un PC, son las que más contribuyen a ese componente.
+En este informe, los dos primeros PC ofrecen una visión clara de las principales dimensiones del rendimiento de los equipos de fútbol Argentino. También nos ayudan a entender las principales variaciones en el rendimiento y pueden ser utilizados para comparar y planificar estrategias antes de los partidos.
+
+
+
+
+
+```{r, echo=FALSE}
+# Variables que tienen NA y reemplazar por el promedio
+colum_na <- c(
+  "posesion_local", "tiros_arco_local", "intentos_local", "faltas_local", "tiro_esquina_local",
+  "posesion_visitante", "tiros_arco_visitante", "intentos_visitante", "faltas_visitante", "tiro_esquina_visitante",
+  "amarillas_local", "amarillas_visitante", "rojas_local", "rojas_visitante", 
+  "fecha_encuentro", "apuesta_local", "apuesta_visitante", "apuesta_empate"
+)
+
+# reemplazar NA por el promedio
+rempl_prom <- function(data, columns) {
+  data %>%
+    mutate(across(all_of(columns), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))
+}
+
+datos1 <- rempl_prom(datos, colum_na)
+
+# Convertir  columnas a factor
+datos1 <- mutate(datos1, across(.cols = c(torneo, equipo_local, equipo_visitante, resultado), .fns = factor))
+
+# Eliminar las variables para  nuevo df
+datos_pca_reducido <- datos1 %>%
+  select(-c(faltas_local, tiro_esquina_local, amarillas_local, rojas_local, fecha_encuentro, apuesta_local,
+            faltas_visitante, tiro_esquina_visitante, amarillas_visitante, rojas_visitante, apuesta_visitante, apuesta_empate,valor_mercado_local,valor_mercado_visitante,faltas_local,edad_media_local,edad_media_visitante,altura_media_local,altura_media_visitante,proporcion_zurdos_local,proporcion_zurdos_visitante,partido)) %>%
+  select_if(is.numeric) %>%
+  drop_na()
+```
+
+
+
+
+
+# Interpretación de los Componentes Principales
+
+
+
+
+## Primer Componente Principal (PC1)
+
+
+El PC1 está dominado por variables relacionadas con las posesiones y los tiros al arco tanto del equipo local como del equipo visitante. Las variables como posesión local, tiros al arco local e intentos de gol del equipo local tienen cargas positivas altas en PC1, mientras que las mismas estadísticas para el equipo visitante tienen cargas negativas.
+
+Esto sugiere que PC1 diferencia fuertemente entre el rendimiento del equipo local y el visitante. Un valor alto en PC1 podría interpretarse como un indicador de un mejor rendimiento del equipo local en términos de posesión y capacidad ofensiva, mientras que un valor bajo en PC1 podría indicar un mejor rendimiento del equipo visitante en estos mismos aspectos.
+
+
+
+
+## Segundo Componente Principal (PC2)
+
+
+El PC2 está influenciado principalmente por las faltas cometidas tanto por el equipo local como por el visitante, junto con los intentos de gol y los tiros de esquina. Las faltas cometidas por el equipo local y visitante tienen cargas de signo opuesto en este componente.
+
+Al mismo tiempo PC2 parece capturar una dimensión que diferencia entre equipos que juegan de manera más agresiva o defensiva. Un valor alto en PC2 puede indicar un equipo que comete más faltas y tiene más intentos de gol y tiros de esquina, sugiriendo un estilo de juego más ofensivo pero también más propenso a cometer infracciones. Por otro lado, un valor bajo en PC2 podría estar asociado con un estilo de juego más defensivo o menos agresivo.
+
+
+```{r, echo=FALSE}
+# pca
+pca_result_reducido <- prcomp(datos_pca_reducido, scale. = TRUE)
+
+# Resumen del PCA
+summary(pca_result_reducido)
+
+```
+
+
+
+
+
+# Gráficos
+
+
+
+## Sedimentación
+
+
+
+```{r, echo=FALSE}
+# Scree plot
+fviz_eig(pca_result_reducido)
+
+
+
+```
+
+
+Un "Scree plot" se utiliza comúnmente en PCA para determinar el número adecuado de componentes principales a retener.
+El gráfico muestra un punto donde la curva cambia drásticamente de dirección, formando un "codo". En este caso está en el componente 2. Esto indica que las dos primeras componentes principales capturan la mayor parte de la varianza en los datos.
+Por lo cual se puede concluir que los primeros dos componentes principales son suficientes para capturar la mayor parte de la varianza en los datos. Retener más componentes probablemente no aportará una ganancia significativa en la varianza explicada y podría complicar el modelo sin añadir valor significativo.
+
+
+
+
+## Biplano
+
+
+
+```{r, echo=FALSE}
+# Biplot
+fviz_pca_biplot(pca_result_reducido, geom.ind = "point", col.ind = datos1$resultado, 
+                palette = "jco", addEllipses = TRUE, label = "var", 
+                col.var = "black", repel = TRUE) +
+  labs(title = "PCA - Biplot", x = "PC1", y = "PC2")
+```
+
+
+
+Este gráfico nos muestra los puntos que representan las observaciones del conjunto de datos proyectadas en el espacio de los primeros dos componentes principales y, vectores que representan las variables originales. La longitud y la dirección de estos indican cómo cada variable contribuye a los componentes principales y los clasifica por color según la variable cualitativa 'resultado' : 'E': Empate, 'L': Gana Local , y 'V': Gana Visitante.
+
+
+
+# Cargas de los componentes principales
+
+
+
+Las cargas de los componentes principales (loadings_reducido) representan la contribución de cada variable original a los componentes principales. Este análisis ayudará a entender qué variables tienen más influencia en la variabilidad capturada por cada componente principal.
+```{r,echo=FALSE}
+# Obtener las cargas de los componentes principales
+loadings_reducido <- pca_result_reducido$rotation
+print(loadings_reducido)
+
+# Visualizar las cargas 
+loadings_df_reducido <- as.data.frame(loadings_reducido)
+loadings_df_reducido$Variable <- rownames(loadings_df_reducido)
+```
+
+
+
+
+
+## Visualización 
+
+
+
+```{r, echo=FALSE}
+# Crear un gráfico de puntos y agregar las etiquetas de texto fuera del gráfico
+#Se ve mejor con zoom y ampliado al maximo
+ggplot(loadings_df_reducido, aes(x = PC1, y = PC2)) +
+  geom_point() +
+  geom_text_repel(aes(label = Variable), size = 3, nudge_x = 0.1, nudge_y = 0.1) +
+  xlim(-1.5, 1.5) +  # Ajusta los límites de los ejes según sea necesario
+  ylim(-1.5, 1.5) +
+  theme_minimal() +
+  ggtitle("Carga de los primeros dos componentes principales")
+
+# leyenda manual
+legend_df <- loadings_df_reducido %>%
+  arrange(PC1, PC2) %>%
+  mutate(Label = paste0(Variable, ": (", round(PC1, 2), ", ", round(PC2, 2), ")"))
+
+
+
+```
+
+```{r, echo=FALSE}
+
+
+#tibble para las componentes principales
+pc_data <- tibble(
+  Variable = c("posesion_local", "posesion_visitante", "intentos_local", "intentos_visitante", 
+               "tiros_arco_visitante", "goles_visitante", "goles_local"),
+  PC1 = c(0.527, -0.527, 0.402, -0.365, NA, NA, NA),
+  PC2 = c(NA, NA, NA, NA, 0.522, 0.445, 0.290)
+)
+
+# Imprimir 
+kable(pc_data, caption = "Valores de las Componentes Principales (PC1 y PC2)")
+
+
+```
+
+
+
+
+El PC1 está principalmente determinado por la posesión del equipo local y visitante y el número de intentos de ambos equipos. La posesión del equipo local tiene una carga positiva alta, mientras que la posesión del equipo visitante tiene una carga negativa alta, lo que sugiere que este componente captura la oposición entre la posesión de los equipos locales y visitantes.
+
+
+
+El PC2 está  influenciado por los tiros a arco y los goles del equipo visitante, así como por los goles del equipo local. Este componente parece capturar la efectividad ofensiva de los equipos visitantes y, en menor medida, de los equipos locales.
+
+# Observaciones finales 
+
+En los datos utilizados para este proyecto, es importante destacar , que también se detallan variables sobre las apuestas realizadas en cada partido de fútbol de cada campeonato entre el período de tiempo que se obtuvieron los datos del dataframe en cuestión. Estas no forman parte de la primera etapa de estudio porque quedaría pendiente para el desarrollo con modelos de machine learning, y de esa forma construir un proceso en el cual ingresan datos específicos de las variables elegidas para predecir si gana el partido el equipo local, por ejemplo. Haciendo referencia sobre características tácticas y/o estratégicas (porcentaje de posesión de pelota por partido), y también de eventos sucedidos con anterioridad (tiros al arco, por ejemplo). Sin embargo, existen posibilidades que sean útiles para caracterizar tipos de apuesta, relaciones ex-post con análisis por parte de los apostadores sobre los equipos, características estudiadas y otras. Y así contrastarlas con las salidas de un modelo predictivo. 
+A si mismo, el análisis generado en este trabajo abre las puertas para profundizar la investigación haciendo foco en las ciencia de datos.
+
+<!-- Botón "Volver al Índice" -->
+<a href="#TOC" class="back-to-top">Volver al Índice</a>
+
